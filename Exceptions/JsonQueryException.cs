@@ -12,7 +12,7 @@ public class JsonQueryException : Exception
     ///     The message that describes the error.
     /// </param>
     public JsonQueryException(string message)
-        : base(message) { }
+        : base(message: message) { }
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="JsonQueryException" /> class.
@@ -24,5 +24,5 @@ public class JsonQueryException : Exception
     ///     The exception that is the cause of the current exception.
     /// </param>
     public JsonQueryException(string message, Exception innerException)
-        : base(message, innerException) { }
+        : base(message: message, innerException: innerException) { }
 }
