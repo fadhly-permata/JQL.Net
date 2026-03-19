@@ -1,5 +1,6 @@
+JQL.Net.sln
 bin
 bin/*
 obj
 obj/*
-JQL.Net.sln
+nupkg/*
