@@ -18,5 +18,7 @@ public static class JsonQueryExtensions
     ///     The results of the query
     /// </returns>
     public static IEnumerable<JToken> Query(this JObject data, string sqlQuery) =>
-        JsonQueryEngine.Execute(new JsonQueryRequest { Data = data }.Parse(sqlQuery));
+        JsonQueryEngine.Execute(
+            request: new JsonQueryRequest { Data = data }.Parse(rawQuery: sqlQuery)
+        );
 }
