@@ -104,6 +104,45 @@ HAVING total_cost > d.budget
 
 ---
 
+## 🗺️ Roadmap & Future Fun
+
+We’re just warming up — the journey has only begun! Here’s a sneak peek at what’s bubbling in the pot for upcoming releases 🍲✨
+
+### ⚡ Core Query Magic
+- [ ] **DISTINCT**: Say goodbye to duplicate rows, keep it clean!
+- [ ] **Pagination**: Add LIMIT & OFFSET so giant JSON arrays don’t scare you.
+- [ ] **Subqueries**: Queries inside queries… inception style 🎬
+- [ ] **Set Ops**: UNION & UNION ALL to mix and match results.
+- [ ] **Culture-Aware Sorting**: Smarter sorting that respects your locale.
+
+### 🔍 Smarter Filtering
+- [ ] **Pattern Matching**: LIKE & REGEX for ninja-level text searches 🥷
+- [ ] **Ranges & Sets**: IN and BETWEEN to keep filters simple.
+- [ ] **Conditional Logic**: CASE WHEN … THEN … ELSE for dynamic tricks.
+- [ ] **Null Safety**: IS NULL & IS MISSING so you don’t trip over empty values.
+
+### 🛠️ Functions Galore
+- [ ] **String Toolkit**: CONCAT, UPPER, LOWER, SUBSTRING — the usual suspects.
+- [ ] **Date & Time**: YEAR(), MONTH(), DAY() — because time matters ⏰
+- [ ] **Type Casting**: CAST() to keep your data in line.
+- [ ] **Coalesce**: Grab the first non-null value like a pro.
+- [ ] **Custom Functions API**: Plug in your own C# magic directly into queries.
+
+### 🚀 Performance & Integrations
+- [ ] **Query Caching**: Faster runs with smart caching.
+- [ ] **Prepared Statements**: Cleaner queries with parameters (@id, etc).
+- [ ] **Async Execution**: ExecuteAsync for smooth non-blocking vibes.
+- [ ] **Schema Discovery**: DESCRIBE your JSON structure like a boss.
+- [ ] **Multi-Format Export**: CSV, XML, DataTable — pick your flavor 🍦
+- [ ] **Query Profiler**: Spot bottlenecks before they slow you down.
+
+---
+
+💡 *This roadmap is a living list — features may shuffle, evolve, or surprise you along the way. Stay tuned, and let’s keep pushing JSON querying to the next level!* 🚀
+
+
+---
+
 ## 🤝 Contributing
 
 Got a cool idea or found a bug? 🐛
