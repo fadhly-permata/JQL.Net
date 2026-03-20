@@ -68,9 +68,25 @@ dotnet pack $selectedProject --configuration Release --output $outputDir --no-bu
 Write-Host "`nSiap untuk terbang ke NuGet?" -ForegroundColor Yellow
 $confirmation = Read-Host "Kirim sekarang? (y/n)"
 if ($confirmation -eq 'y') {
-    if ($null -eq $env:NUGET_API_KEY) {
-        Write-Host "Variabel `$env:NUGET_API_KEY` belum ada di sistem kamu." -ForegroundColor Red
-        exit 1
+    # Perbaikan: Coba baca API Key dari file config jika env var tidak ada
+    $apiKey = $env:NUGET_API_KEY
+    if ([string]::IsNullOrWhiteSpace($apiKey)) {
+        Write-Host "Variabel `$env:NUGET_API_KEY tidak ditemukan. Mari coba cara lain..." -ForegroundColor Yellow
+        
+        # Coba baca dari file nuget.config
+        $nugetConfigPath = Join-Path $env:USERPROFILE ".nuget\NuGet\NuGet.Config"
+        if (Test-Path $nugetConfigPath) {
+            $apiKey = (Get-Content $nugetConfigPath | Select-String "apikey") -replace ".*<add key=""apikey"" value=""(.*)"" />.*", '$1'
+        }
+        
+        if ([string]::IsNullOrWhiteSpace($apiKey)) {
+            # Jika masih kosong, minta input manual
+            $apiKey = Read-Host "Masukkan API Key NuGet kamu"
+            if ([string]::IsNullOrWhiteSpace($apiKey)) {
+                Write-Host "API Key tidak boleh kosong!" -ForegroundColor Red
+                exit 1
+            }
+        }
     }
 
     $nupkgFile = Get-ChildItem "$outputDir/*$newVersion.nupkg" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -81,7 +97,7 @@ if ($confirmation -eq 'y') {
     }
 
     Write-Host "Mengirim paket ke NuGet..." -ForegroundColor DarkCyan
-    dotnet nuget push $nupkgFile.FullName --api-key $env:NUGET_API_KEY --source "https://api.nuget.org/v3/index.json" --skip-duplicate
+    dotnet nuget push $nupkgFile.FullName --api-key $apiKey --source "https://api.nuget.org/v3/index.json" --skip-duplicate
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`nHOREEE! Paket kamu sudah mendarat di NuGet!" -ForegroundColor Green -BackgroundColor Black
