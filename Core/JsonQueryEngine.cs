@@ -229,28 +229,36 @@ public static class JsonQueryEngine
         // Handle khusus untuk SELECT $.*
         if (select.Length == 1 && select[0] == "$.*")
         {
-            // Jika item adalah JObject, kembalikan langsung
-            if (item is JObject)
-                return item.DeepClone();
-
-            // Jika item punya nilai tunggal, kembalikan nilai tersebut
-            return item;
+            return item.DeepClone();
         }
 
-        // Handle khusus untuk SELECT *
+        // Handle khusus untuk SELECT * atau alias.*
+        if (select.Length == 1 && select[0].EndsWith(".*"))
+        {
+            string alias = select[0].Split('.')[0];
+            if (item[alias] != null)
+            {
+                return item[alias].DeepClone();
+            }
+            return item.DeepClone();
+        }
+
+        // Handle khusus untuk SELECT * (tanpa alias)
         if (select.Length == 1 && select[0] == "*")
         {
-            // Jika item adalah JObject, kembalikan semua properti
             if (item is JObject jObj)
             {
                 var result = new JObject();
                 foreach (var prop in jObj.Properties())
                 {
-                    result[prop.Name] = prop.Value.DeepClone();
+                    // Skip properti yang merupakan alias join
+                    if (!prop.Name.StartsWith("$"))
+                    {
+                        result[prop.Name] = prop.Value.DeepClone();
+                    }
                 }
                 return result;
             }
-
             return item;
         }
 
@@ -269,8 +277,25 @@ public static class JsonQueryEngine
                             : sourceField.Replace("$.", "")
                     );
 
-            projectedObj[aliasField] =
-                GetTokenValue(root, item, sourceField)?.DeepClone() ?? JValue.CreateNull();
+            // Handle field dengan alias
+            JToken? value = null;
+            if (sourceField.Contains('.'))
+            {
+                var fieldParts = sourceField.Split('.');
+                string alias = fieldParts[0];
+                string field = fieldParts[1];
+
+                if (item[alias] is JObject aliasObj)
+                {
+                    value = aliasObj[field] ?? aliasObj.SelectToken(field);
+                }
+            }
+            else
+            {
+                value = GetTokenValue(root, item, sourceField);
+            }
+
+            projectedObj[aliasField] = value?.DeepClone() ?? JValue.CreateNull();
         }
         return projectedObj;
     }
@@ -289,9 +314,24 @@ public static class JsonQueryEngine
     {
         if (path == "$")
             return root;
-        if (path.StartsWith(value: "$."))
-            return root.SelectToken(path: path[2..]);
-        return item.SelectToken(path: path) ?? item[path];
+
+        if (path.StartsWith("$."))
+            return root.SelectToken(path[2..]);
+
+        // Handle path dengan alias (misal: t.CustomerName)
+        if (path.Contains('.'))
+        {
+            var parts = path.Split('.');
+            string alias = parts[0];
+            string field = string.Join(".", parts.Skip(1));
+
+            if (item[alias] is JToken aliasToken)
+            {
+                return aliasToken.SelectToken(field) ?? aliasToken[field];
+            }
+        }
+
+        return item.SelectToken(path) ?? item[path];
     }
 
     private static bool EvaluateConditions(JObject root, JToken item, string[] conditions)
