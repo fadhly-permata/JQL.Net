@@ -496,11 +496,14 @@ public static class JsonQueryEngine
     {
         IOrderedEnumerable<JToken>? orderedQuery = null;
 
-        foreach (var orderClause in order)
+        for (int i = 0; i < order.Length; i++)
         {
-            // Split untuk memisahkan nama kolom dan arah pengurutan
-            var parts = orderClause.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            string column = parts[0].Trim();
+            var clause = order[i].Trim();
+            var parts = clause.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+                continue;
+
+            string column = parts[0];
             bool isDescending =
                 parts.Length > 1 && parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
 
@@ -525,19 +528,43 @@ public static class JsonQueryEngine
     {
         try
         {
-            // Coba ambil nilai sebagai angka dulu
+            // Cari token berdasarkan path
             var token = item.SelectToken(path) ?? item[path];
+
+            // Jika tidak ditemukan dan path mengandung titik (untuk alias)
+            if (token == null && path.Contains('.'))
+            {
+                var pathParts = path.Split('.');
+                if (pathParts.Length == 2)
+                {
+                    var alias = pathParts[0];
+                    var field = pathParts[1];
+
+                    if (item[alias] is JObject aliasObj)
+                    {
+                        token = aliasObj[field] ?? aliasObj.SelectToken(field);
+                    }
+                }
+            }
+
             if (token == null)
                 return null;
 
-            if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
-                return token.Value<double>();
-
-            return token.ToString();
+            // Kembalikan nilai berdasarkan tipe token
+            return token.Type switch
+            {
+                JTokenType.Integer => token.Value<long>(),
+                JTokenType.Float => token.Value<double>(),
+                JTokenType.String => token.Value<string>() ?? string.Empty,
+                JTokenType.Boolean => token.Value<bool>(),
+                JTokenType.Date => token.Value<DateTime>(),
+                JTokenType.Null => null,
+                _ => token.ToString(),
+            };
         }
         catch
         {
-            return item[path]?.ToString();
+            return null;
         }
     }
 
