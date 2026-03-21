@@ -45,7 +45,13 @@ public static class JsonQueryEngine
             query = PerformGrouping(request: request, query: query);
             query = PerformSorting(request: request, query: query);
 
-            return query;
+            var result = query;
+
+            // Apply DISTINCT if requested
+            if (request.Distinct)
+                result = result.Distinct(new JTokenEqualityComparer());
+
+            return result;
         }
         catch (Exception ex)
         {
@@ -410,19 +416,50 @@ public static class JsonQueryEngine
     private static IEnumerable<JToken> ApplyOrdering(IEnumerable<JToken> query, string[] order)
     {
         IOrderedEnumerable<JToken>? orderedQuery = null;
-        for (int i = 0; i < order.Length; i++)
+
+        foreach (var orderClause in order)
         {
-            string column = order[i];
-            if (i == 0)
-                orderedQuery = query.OrderBy(keySelector: item =>
-                    item.SelectToken(path: column) ?? item[column]
-                );
+            // Split untuk memisahkan nama kolom dan arah pengurutan
+            var parts = orderClause.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string column = parts[0].Trim();
+            bool isDescending =
+                parts.Length > 1 && parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
+
+            if (orderedQuery == null)
+            {
+                orderedQuery = isDescending
+                    ? query.OrderByDescending(item => GetOrderValue(item, column))
+                    : query.OrderBy(item => GetOrderValue(item, column));
+            }
             else
-                orderedQuery = orderedQuery!.ThenBy(keySelector: item =>
-                    item.SelectToken(path: column) ?? item[column]
-                );
+            {
+                orderedQuery = isDescending
+                    ? orderedQuery.ThenByDescending(item => GetOrderValue(item, column))
+                    : orderedQuery.ThenBy(item => GetOrderValue(item, column));
+            }
         }
+
         return orderedQuery ?? query;
+    }
+
+    private static object? GetOrderValue(JToken item, string path)
+    {
+        try
+        {
+            // Coba ambil nilai sebagai angka dulu
+            var token = item.SelectToken(path) ?? item[path];
+            if (token == null)
+                return null;
+
+            if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
+                return token.Value<double>();
+
+            return token.ToString();
+        }
+        catch
+        {
+            return item[path]?.ToString();
+        }
     }
 
     private static JToken CalculateAggregate(IEnumerable<JToken> group, string expression)

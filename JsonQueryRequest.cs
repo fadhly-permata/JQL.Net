@@ -53,6 +53,28 @@ public class JsonQueryRequest
     public string? RawQuery { get; set; }
 
     /// <summary>
+    ///     Whether to return distinct results.
+    /// </summary>
+    public bool Distinct { get; set; }
+
+    /// <summary>
+    ///     Parse a SQL-like query into a JsonQueryRequest object.
+    /// </summary>
+    /// <returns>
+    ///     A JsonQueryRequest object.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    ///     Thrown when <see cref="RawQuery" /> is null or empty.
+    /// </exception>
+    public JsonQueryRequest Parse()
+    {
+        if (string.IsNullOrWhiteSpace(RawQuery))
+            throw new ArgumentException("Query string cannot be null or empty.");
+
+        return Parse(RawQuery);
+    }
+
+    /// <summary>
     ///     Parse a SQL-like query into a JsonQueryRequest object.
     /// </summary>
     /// <param name="rawQuery">
@@ -66,58 +88,57 @@ public class JsonQueryRequest
     /// </exception>
     public JsonQueryRequest Parse(string rawQuery)
     {
-        if (string.IsNullOrWhiteSpace(value: rawQuery))
-            throw new ArgumentException(message: "Query string cannot be null or empty.");
+        if (string.IsNullOrWhiteSpace(rawQuery))
+            throw new ArgumentException("Query string cannot be null or empty.");
 
-        RawQuery = rawQuery.Replace(oldValue: Environment.NewLine, newValue: " ").Trim();
+        RawQuery = rawQuery.Replace(Environment.NewLine, " ").Trim();
 
-        Select = GetSection(query: RawQuery, startKey: "SELECT", endKeys: ["FROM"])
-            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
-            .Select(selector: static s => s.Trim())
+        // Handle DISTINCT keyword
+        if (RawQuery.IndexOf("SELECT DISTINCT", StringComparison.OrdinalIgnoreCase) != -1)
+        {
+            Distinct = true;
+            RawQuery = RawQuery.Replace("DISTINCT", "", StringComparison.OrdinalIgnoreCase).Trim();
+        }
+
+        Select = GetSection(RawQuery, "SELECT", new[] { "FROM" })
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
             .ToArray();
 
         From =
-            GetSection(
-                query: RawQuery,
-                startKey: "FROM",
-                endKeys: ["JOIN", "WHERE", "GROUP BY", "ORDER BY"]
-            )
-                ?.Trim() ?? "$";
+            GetSection(RawQuery, "FROM", new[] { "JOIN", "WHERE", "GROUP BY", "ORDER BY" })?.Trim()
+            ?? "$";
 
         Join = GetSections(
             query: RawQuery,
             key: "JOIN",
-            endKeys: ["WHERE", "GROUP BY", "ORDER BY"]
+            endKeys: new[] { "WHERE", "GROUP BY", "ORDER BY" }
         );
 
-        Conditions = GetSection(
-            query: RawQuery,
-            startKey: "WHERE",
-            endKeys: ["GROUP BY", "ORDER BY"]
-        )
+        Conditions = GetSection(RawQuery, "WHERE", new[] { "GROUP BY", "ORDER BY" })
             ?.Split(
-                separator: [" AND ", " OR ", " and ", " or "],
-                options: StringSplitOptions.RemoveEmptyEntries
+                new[] { " AND ", " OR ", " and ", " or " },
+                StringSplitOptions.RemoveEmptyEntries
             )
-            .Select(selector: static s => s.Trim())
+            .Select(s => s.Trim())
             .ToArray();
 
-        GroupBy = GetSection(query: RawQuery, startKey: "GROUP BY", endKeys: ["HAVING", "ORDER BY"])
-            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
-            .Select(selector: static s => s.Trim())
+        GroupBy = GetSection(RawQuery, "GROUP BY", new[] { "HAVING", "ORDER BY" })
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
             .ToArray();
 
-        Having = GetSection(query: RawQuery, startKey: "HAVING", endKeys: ["ORDER BY"])
+        Having = GetSection(RawQuery, "HAVING", new[] { "ORDER BY" })
             ?.Split(
-                separator: [" AND ", " OR ", " and ", " or "],
-                options: StringSplitOptions.RemoveEmptyEntries
+                new[] { " AND ", " OR ", " and ", " or " },
+                StringSplitOptions.RemoveEmptyEntries
             )
-            .Select(selector: static s => s.Trim())
+            .Select(s => s.Trim())
             .ToArray();
 
-        Order = GetSection(query: RawQuery, startKey: "ORDER BY", endKeys: null)
-            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
-            .Select(selector: static s => s.Trim())
+        Order = GetSection(RawQuery, "ORDER BY", null)
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
             .ToArray();
 
         return this;
