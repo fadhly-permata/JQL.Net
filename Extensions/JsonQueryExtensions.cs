@@ -3,6 +3,9 @@ using Newtonsoft.Json.Linq;
 
 namespace JQL.Net.Extensions;
 
+/// <summary>
+///     Extension methods for JObject
+/// </summary>
 public static class JsonQueryExtensions
 {
     /// <summary>

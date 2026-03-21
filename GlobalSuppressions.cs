@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 [assembly: SuppressMessage(
     "SonarLint",
     "S1192",
-    Justification = "SQL keywords are standard and unlikely to change",
-    Scope = "namespace",
-    Target = "~N:JQL.Net.Core"
+    Justification = "SQL keywords in Parse method are standard and need to be literals for clarity",
+    Scope = "member",
+    Target = "~M:JQL.Net.JsonQueryRequest.Parse(System.String)"
 )]

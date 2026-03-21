@@ -89,28 +89,44 @@ public class JsonQueryRequest
     /// </exception>
     public JsonQueryRequest Parse(string rawQuery)
     {
-        if (string.IsNullOrWhiteSpace(rawQuery))
-            throw new ArgumentException("Query string cannot be null or empty.");
+        if (string.IsNullOrWhiteSpace(value: rawQuery))
+            throw new ArgumentException(message: "Query string cannot be null or empty.");
 
-        RawQuery = rawQuery.Replace(Environment.NewLine, " ").Trim();
+        RawQuery = rawQuery.Replace(oldValue: Environment.NewLine, newValue: " ").Trim();
 
         // Handle DISTINCT keyword
-        if (RawQuery.IndexOf("SELECT DISTINCT", StringComparison.OrdinalIgnoreCase) != -1)
+        if (
+            RawQuery.Contains(
+                value: "SELECT DISTINCT",
+                comparisonType: StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             Distinct = true;
-            RawQuery = RawQuery.Replace("DISTINCT", "", StringComparison.OrdinalIgnoreCase).Trim();
+            RawQuery = RawQuery
+                .Replace(
+                    oldValue: "DISTINCT",
+                    newValue: "",
+                    comparisonType: StringComparison.OrdinalIgnoreCase
+                )
+                .Trim();
         }
 
-        Select = GetSection(RawQuery, "SELECT", ["FROM"])
-            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
+        Select = GetSection(query: RawQuery, startKey: "SELECT", endKeys: ["FROM"])
+            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
+            .Select(selector: static s => s.Trim())
             .ToArray();
 
         From =
-            GetSection(RawQuery, "FROM", ["JOIN", "WHERE", "GROUP BY", "ORDER BY"])?.Trim() ?? "$";
+            GetSection(
+                query: RawQuery,
+                startKey: "FROM",
+                endKeys: ["JOIN", "WHERE", "GROUP BY", "ORDER BY"]
+            )
+                ?.Trim() ?? "$";
 
         // Validasi path
-        if (string.IsNullOrWhiteSpace(From))
+        if (string.IsNullOrWhiteSpace(value: From))
         {
             throw new JsonQueryException("FROM clause cannot be empty");
         }
@@ -131,22 +147,22 @@ public class JsonQueryRequest
 
         Conditions = GetSection(RawQuery, "WHERE", ["GROUP BY", "ORDER BY"])
             ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
+            .Select(static s => s.Trim())
             .ToArray();
 
         GroupBy = GetSection(RawQuery, "GROUP BY", ["HAVING", "ORDER BY"])
             ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
+            .Select(static s => s.Trim())
             .ToArray();
 
         Having = GetSection(RawQuery, "HAVING", ["ORDER BY"])
             ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
+            .Select(static s => s.Trim())
             .ToArray();
 
         Order = GetSection(RawQuery, "ORDER BY", null)
             ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
+            .Select(static s => s.Trim())
             .ToArray();
 
         return this;
