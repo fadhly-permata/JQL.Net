@@ -145,16 +145,22 @@ public static class JsonQueryEngine
 
     private static JToken? GetSourceToken(JObject root, string path)
     {
+        // Jika path tidak dimulai dengan $, tambahkan $. secara otomatis
+        if (!path.StartsWith('$') && !path.StartsWith('['))
+        {
+            path = "$." + path;
+        }
+
         if (path == "$")
             return root;
 
-        if (path.StartsWith(value: "$."))
+        if (path.StartsWith("$."))
         {
-            var cleanPath = path[2..];
-            return root.SelectToken(path: cleanPath) ?? root[cleanPath];
+            string cleanPath = path[2..];
+            return root.SelectToken(cleanPath) ?? root[cleanPath];
         }
 
-        return root.SelectToken(path: path) ?? root[path];
+        return root.SelectToken(path) ?? root[path];
     }
 
     private static IEnumerable<JToken> ApplyJoin(

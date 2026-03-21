@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using JQL.Net.Exceptions;
+using Newtonsoft.Json.Linq;
 
 namespace JQL.Net;
 
@@ -100,39 +101,46 @@ public class JsonQueryRequest
             RawQuery = RawQuery.Replace("DISTINCT", "", StringComparison.OrdinalIgnoreCase).Trim();
         }
 
-        Select = GetSection(RawQuery, "SELECT", new[] { "FROM" })
+        Select = GetSection(RawQuery, "SELECT", ["FROM"])
             ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .ToArray();
 
         From =
-            GetSection(RawQuery, "FROM", new[] { "JOIN", "WHERE", "GROUP BY", "ORDER BY" })?.Trim()
-            ?? "$";
+            GetSection(RawQuery, "FROM", ["JOIN", "WHERE", "GROUP BY", "ORDER BY"])?.Trim() ?? "$";
+
+        // Validasi path
+        if (string.IsNullOrWhiteSpace(From))
+        {
+            throw new JsonQueryException("FROM clause cannot be empty");
+        }
+
+        if (!From.StartsWith('$') && !From.StartsWith('['))
+        {
+            throw new JsonQueryException(
+                "Invalid path in FROM clause. Path must start with '$' or '['. "
+                    + $"Example: FROM $.Transactions or FROM $['My Table']. Received: {From}"
+            );
+        }
 
         Join = GetSections(
             query: RawQuery,
             key: "JOIN",
-            endKeys: new[] { "WHERE", "GROUP BY", "ORDER BY" }
+            endKeys: ["WHERE", "GROUP BY", "ORDER BY"]
         );
 
-        Conditions = GetSection(RawQuery, "WHERE", new[] { "GROUP BY", "ORDER BY" })
-            ?.Split(
-                new[] { " AND ", " OR ", " and ", " or " },
-                StringSplitOptions.RemoveEmptyEntries
-            )
+        Conditions = GetSection(RawQuery, "WHERE", ["GROUP BY", "ORDER BY"])
+            ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .ToArray();
 
-        GroupBy = GetSection(RawQuery, "GROUP BY", new[] { "HAVING", "ORDER BY" })
+        GroupBy = GetSection(RawQuery, "GROUP BY", ["HAVING", "ORDER BY"])
             ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .ToArray();
 
-        Having = GetSection(RawQuery, "HAVING", new[] { "ORDER BY" })
-            ?.Split(
-                new[] { " AND ", " OR ", " and ", " or " },
-                StringSplitOptions.RemoveEmptyEntries
-            )
+        Having = GetSection(RawQuery, "HAVING", ["ORDER BY"])
+            ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .ToArray();
 
