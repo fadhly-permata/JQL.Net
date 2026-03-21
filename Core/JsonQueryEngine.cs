@@ -224,20 +224,53 @@ public static class JsonQueryEngine
         });
     }
 
-    private static JObject ProjectItem(JObject root, JToken item, string[] select)
+    private static JToken ProjectItem(JObject root, JToken item, string[] select)
     {
+        // Handle khusus untuk SELECT $.*
+        if (select.Length == 1 && select[0] == "$.*")
+        {
+            // Jika item adalah JObject, kembalikan langsung
+            if (item is JObject)
+                return item.DeepClone();
+
+            // Jika item punya nilai tunggal, kembalikan nilai tersebut
+            return item;
+        }
+
+        // Handle khusus untuk SELECT *
+        if (select.Length == 1 && select[0] == "*")
+        {
+            // Jika item adalah JObject, kembalikan semua properti
+            if (item is JObject jObj)
+            {
+                var result = new JObject();
+                foreach (var prop in jObj.Properties())
+                {
+                    result[prop.Name] = prop.Value.DeepClone();
+                }
+                return result;
+            }
+
+            return item;
+        }
+
+        // Proyeksi normal untuk kolom spesifik
         JObject projectedObj = [];
         foreach (var selection in select)
         {
-            var parts = selection.Split(
-                separator: [" AS ", " as "],
-                options: StringSplitOptions.RemoveEmptyEntries
-            );
+            var parts = selection.Split([" AS ", " as "], StringSplitOptions.RemoveEmptyEntries);
             string sourceField = parts[0].Trim();
+            string aliasField =
+                parts.Length > 1
+                    ? parts[1].Trim()
+                    : (
+                        sourceField.Contains('.')
+                            ? sourceField.Split('.').Last()
+                            : sourceField.Replace("$.", "")
+                    );
 
-            string aliasField = GetAliasField(parts: parts, sourceField: sourceField);
-
-            projectedObj[aliasField] = GetTokenValue(root: root, item: item, path: sourceField);
+            projectedObj[aliasField] =
+                GetTokenValue(root, item, sourceField)?.DeepClone() ?? JValue.CreateNull();
         }
         return projectedObj;
     }
