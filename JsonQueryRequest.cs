@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using JQL.Net.Exceptions;
+using Newtonsoft.Json.Linq;
 
 namespace JQL.Net;
 
@@ -53,6 +54,28 @@ public class JsonQueryRequest
     public string? RawQuery { get; set; }
 
     /// <summary>
+    ///     Whether to return distinct results.
+    /// </summary>
+    public bool Distinct { get; set; }
+
+    /// <summary>
+    ///     Parse a SQL-like query into a JsonQueryRequest object.
+    /// </summary>
+    /// <returns>
+    ///     A JsonQueryRequest object.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    ///     Thrown when <see cref="RawQuery" /> is null or empty.
+    /// </exception>
+    public JsonQueryRequest Parse()
+    {
+        if (string.IsNullOrWhiteSpace(RawQuery))
+            throw new ArgumentException("Query string cannot be null or empty.");
+
+        return Parse(RawQuery);
+    }
+
+    /// <summary>
     ///     Parse a SQL-like query into a JsonQueryRequest object.
     /// </summary>
     /// <param name="rawQuery">
@@ -71,6 +94,24 @@ public class JsonQueryRequest
 
         RawQuery = rawQuery.Replace(oldValue: Environment.NewLine, newValue: " ").Trim();
 
+        // Handle DISTINCT keyword
+        if (
+            RawQuery.Contains(
+                value: "SELECT DISTINCT",
+                comparisonType: StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            Distinct = true;
+            RawQuery = RawQuery
+                .Replace(
+                    oldValue: "DISTINCT",
+                    newValue: "",
+                    comparisonType: StringComparison.OrdinalIgnoreCase
+                )
+                .Trim();
+        }
+
         Select = GetSection(query: RawQuery, startKey: "SELECT", endKeys: ["FROM"])
             ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
             .Select(selector: static s => s.Trim())
@@ -84,40 +125,44 @@ public class JsonQueryRequest
             )
                 ?.Trim() ?? "$";
 
+        // Validasi path
+        if (string.IsNullOrWhiteSpace(value: From))
+        {
+            throw new JsonQueryException("FROM clause cannot be empty");
+        }
+
+        if (!From.StartsWith('$') && !From.StartsWith('['))
+        {
+            throw new JsonQueryException(
+                "Invalid path in FROM clause. Path must start with '$' or '['. "
+                    + $"Example: FROM $.Transactions or FROM $['My Table']. Received: {From}"
+            );
+        }
+
         Join = GetSections(
             query: RawQuery,
             key: "JOIN",
             endKeys: ["WHERE", "GROUP BY", "ORDER BY"]
         );
 
-        Conditions = GetSection(
-            query: RawQuery,
-            startKey: "WHERE",
-            endKeys: ["GROUP BY", "ORDER BY"]
-        )
-            ?.Split(
-                separator: [" AND ", " OR ", " and ", " or "],
-                options: StringSplitOptions.RemoveEmptyEntries
-            )
-            .Select(selector: static s => s.Trim())
+        Conditions = GetSection(RawQuery, "WHERE", ["GROUP BY", "ORDER BY"])
+            ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
+            .Select(static s => s.Trim())
             .ToArray();
 
-        GroupBy = GetSection(query: RawQuery, startKey: "GROUP BY", endKeys: ["HAVING", "ORDER BY"])
-            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
-            .Select(selector: static s => s.Trim())
+        GroupBy = GetSection(RawQuery, "GROUP BY", ["HAVING", "ORDER BY"])
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static s => s.Trim())
             .ToArray();
 
-        Having = GetSection(query: RawQuery, startKey: "HAVING", endKeys: ["ORDER BY"])
-            ?.Split(
-                separator: [" AND ", " OR ", " and ", " or "],
-                options: StringSplitOptions.RemoveEmptyEntries
-            )
-            .Select(selector: static s => s.Trim())
+        Having = GetSection(RawQuery, "HAVING", ["ORDER BY"])
+            ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
+            .Select(static s => s.Trim())
             .ToArray();
 
-        Order = GetSection(query: RawQuery, startKey: "ORDER BY", endKeys: null)
-            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
-            .Select(selector: static s => s.Trim())
+        Order = GetSection(RawQuery, "ORDER BY", null)
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static s => s.Trim())
             .ToArray();
 
         return this;

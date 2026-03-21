@@ -45,7 +45,13 @@ public static class JsonQueryEngine
             query = PerformGrouping(request: request, query: query);
             query = PerformSorting(request: request, query: query);
 
-            return query;
+            var result = query;
+
+            // Apply DISTINCT if requested
+            if (request.Distinct)
+                result = result.Distinct(new JTokenEqualityComparer());
+
+            return result;
         }
         catch (Exception ex)
         {
@@ -139,16 +145,22 @@ public static class JsonQueryEngine
 
     private static JToken? GetSourceToken(JObject root, string path)
     {
+        // Jika path tidak dimulai dengan $, tambahkan $. secara otomatis
+        if (!path.StartsWith('$') && !path.StartsWith('['))
+        {
+            path = "$." + path;
+        }
+
         if (path == "$")
             return root;
 
-        if (path.StartsWith(value: "$."))
+        if (path.StartsWith("$."))
         {
-            var cleanPath = path[2..];
-            return root.SelectToken(path: cleanPath) ?? root[cleanPath];
+            string cleanPath = path[2..];
+            return root.SelectToken(cleanPath) ?? root[cleanPath];
         }
 
-        return root.SelectToken(path: path) ?? root[path];
+        return root.SelectToken(path) ?? root[path];
     }
 
     private static IEnumerable<JToken> ApplyJoin(
@@ -218,20 +230,78 @@ public static class JsonQueryEngine
         });
     }
 
-    private static JObject ProjectItem(JObject root, JToken item, string[] select)
+    private static JToken ProjectItem(JObject root, JToken item, string[] select)
     {
+        // Handle khusus untuk SELECT $.*
+        if (select.Length == 1 && select[0] == "$.*")
+        {
+            return item.DeepClone();
+        }
+
+        // Handle khusus untuk SELECT * atau alias.*
+        if (select.Length == 1 && select[0].EndsWith(".*"))
+        {
+            string alias = select[0].Split('.')[0];
+            if (item[alias] != null)
+            {
+                return item[alias].DeepClone();
+            }
+            return item.DeepClone();
+        }
+
+        // Handle khusus untuk SELECT * (tanpa alias)
+        if (select.Length == 1 && select[0] == "*")
+        {
+            if (item is JObject jObj)
+            {
+                var result = new JObject();
+                foreach (var prop in jObj.Properties())
+                {
+                    // Skip properti yang merupakan alias join
+                    if (!prop.Name.StartsWith("$"))
+                    {
+                        result[prop.Name] = prop.Value.DeepClone();
+                    }
+                }
+                return result;
+            }
+            return item;
+        }
+
+        // Proyeksi normal untuk kolom spesifik
         JObject projectedObj = [];
         foreach (var selection in select)
         {
-            var parts = selection.Split(
-                separator: [" AS ", " as "],
-                options: StringSplitOptions.RemoveEmptyEntries
-            );
+            var parts = selection.Split([" AS ", " as "], StringSplitOptions.RemoveEmptyEntries);
             string sourceField = parts[0].Trim();
+            string aliasField =
+                parts.Length > 1
+                    ? parts[1].Trim()
+                    : (
+                        sourceField.Contains('.')
+                            ? sourceField.Split('.').Last()
+                            : sourceField.Replace("$.", "")
+                    );
 
-            string aliasField = GetAliasField(parts: parts, sourceField: sourceField);
+            // Handle field dengan alias
+            JToken? value = null;
+            if (sourceField.Contains('.'))
+            {
+                var fieldParts = sourceField.Split('.');
+                string alias = fieldParts[0];
+                string field = fieldParts[1];
 
-            projectedObj[aliasField] = GetTokenValue(root: root, item: item, path: sourceField);
+                if (item[alias] is JObject aliasObj)
+                {
+                    value = aliasObj[field] ?? aliasObj.SelectToken(field);
+                }
+            }
+            else
+            {
+                value = GetTokenValue(root, item, sourceField);
+            }
+
+            projectedObj[aliasField] = value?.DeepClone() ?? JValue.CreateNull();
         }
         return projectedObj;
     }
@@ -250,9 +320,24 @@ public static class JsonQueryEngine
     {
         if (path == "$")
             return root;
-        if (path.StartsWith(value: "$."))
-            return root.SelectToken(path: path[2..]);
-        return item.SelectToken(path: path) ?? item[path];
+
+        if (path.StartsWith("$."))
+            return root.SelectToken(path[2..]);
+
+        // Handle path dengan alias (misal: t.CustomerName)
+        if (path.Contains('.'))
+        {
+            var parts = path.Split('.');
+            string alias = parts[0];
+            string field = string.Join(".", parts.Skip(1));
+
+            if (item[alias] is JToken aliasToken)
+            {
+                return aliasToken.SelectToken(field) ?? aliasToken[field];
+            }
+        }
+
+        return item.SelectToken(path) ?? item[path];
     }
 
     private static bool EvaluateConditions(JObject root, JToken item, string[] conditions)
@@ -410,19 +495,77 @@ public static class JsonQueryEngine
     private static IEnumerable<JToken> ApplyOrdering(IEnumerable<JToken> query, string[] order)
     {
         IOrderedEnumerable<JToken>? orderedQuery = null;
+
         for (int i = 0; i < order.Length; i++)
         {
-            string column = order[i];
-            if (i == 0)
-                orderedQuery = query.OrderBy(keySelector: item =>
-                    item.SelectToken(path: column) ?? item[column]
-                );
+            var clause = order[i].Trim();
+            var parts = clause.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+                continue;
+
+            string column = parts[0];
+            bool isDescending =
+                parts.Length > 1 && parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
+
+            if (orderedQuery == null)
+            {
+                orderedQuery = isDescending
+                    ? query.OrderByDescending(item => GetOrderValue(item, column))
+                    : query.OrderBy(item => GetOrderValue(item, column));
+            }
             else
-                orderedQuery = orderedQuery!.ThenBy(keySelector: item =>
-                    item.SelectToken(path: column) ?? item[column]
-                );
+            {
+                orderedQuery = isDescending
+                    ? orderedQuery.ThenByDescending(item => GetOrderValue(item, column))
+                    : orderedQuery.ThenBy(item => GetOrderValue(item, column));
+            }
         }
+
         return orderedQuery ?? query;
+    }
+
+    private static object? GetOrderValue(JToken item, string path)
+    {
+        try
+        {
+            // Cari token berdasarkan path
+            var token = item.SelectToken(path) ?? item[path];
+
+            // Jika tidak ditemukan dan path mengandung titik (untuk alias)
+            if (token == null && path.Contains('.'))
+            {
+                var pathParts = path.Split('.');
+                if (pathParts.Length == 2)
+                {
+                    var alias = pathParts[0];
+                    var field = pathParts[1];
+
+                    if (item[alias] is JObject aliasObj)
+                    {
+                        token = aliasObj[field] ?? aliasObj.SelectToken(field);
+                    }
+                }
+            }
+
+            if (token == null)
+                return null;
+
+            // Kembalikan nilai berdasarkan tipe token
+            return token.Type switch
+            {
+                JTokenType.Integer => token.Value<long>(),
+                JTokenType.Float => token.Value<double>(),
+                JTokenType.String => token.Value<string>() ?? string.Empty,
+                JTokenType.Boolean => token.Value<bool>(),
+                JTokenType.Date => token.Value<DateTime>(),
+                JTokenType.Null => null,
+                _ => token.ToString(),
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static JToken CalculateAggregate(IEnumerable<JToken> group, string expression)
