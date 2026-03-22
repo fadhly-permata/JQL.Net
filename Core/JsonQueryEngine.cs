@@ -28,12 +28,12 @@ public static class JsonQueryEngine
 
         try
         {
-            var fromParts = request.From.Split(
+            var fromClauseParts = request.From.Split( // Ganti nama variabel dari fromParts
                 separator: [" AS ", " as "],
                 options: StringSplitOptions.RemoveEmptyEntries
             );
-            var fromPath = fromParts[0].Trim();
-            var fromAlias = fromParts.Length > 1 ? fromParts[1].Trim() : string.Empty;
+            var fromPath = fromClauseParts[0].Trim();
+            var fromAlias = fromClauseParts.Length > 1 ? fromClauseParts[1].Trim() : string.Empty;
 
             var targetToken = GetSourceToken(root: request.Data, path: fromPath);
             if (targetToken == null)
@@ -69,28 +69,28 @@ public static class JsonQueryEngine
 
             var globalKeys = request.Data.Properties().Select(selector: p => p.Name).ToList();
             var columnMap = new Dictionary<string, bool>(); // Key: AliasColumn, Value: IsGlobal
-            bool hasGlobalInSelect = false;
-            bool hasDetailInSelect = false;
+            var hasGlobalInSelect = false;
+            var hasDetailInSelect = false;
 
             if (request.Select != null)
             {
                 foreach (var s in request.Select)
                 {
-                    var p = s.Split(
+                    var selectParts = s.Split( // Ganti nama variabel dari p
                         separator: [" AS ", " as "],
                         options: StringSplitOptions.RemoveEmptyEntries
                     );
-                    var source = p[0].Trim();
+                    var source = selectParts[0].Trim();
                     var alias =
-                        p.Length > 1
-                            ? p[1].Trim()
+                        selectParts.Length > 1
+                            ? selectParts[1].Trim()
                             : (
                                 source.Contains(value: '.')
                                     ? source.Split(separator: '.').Last()
                                     : source.Replace(oldValue: "$.", newValue: "")
                             );
 
-                    bool isGlobal =
+                    var isGlobal =
                         source.StartsWith(value: "$.")
                         || (
                             globalKeys.Contains(item: source)
@@ -109,33 +109,54 @@ public static class JsonQueryEngine
             if (hasGlobalInSelect && hasDetailInSelect && queryResult.Count > 0)
             {
                 var masterObj = new JObject();
-                var detailMap = new Dictionary<string, JArray>();
+                var detailList = new JArray();
 
+                // Ambil global fields (hanya diambil sekali)
                 foreach (var item in queryResult)
                 {
                     if (item is not JObject jo)
                         continue;
 
+                    var detailItem = new JObject();
+                    var hasDetail = false;
+
                     foreach (var prop in jo.Properties())
                     {
-                        if (
-                            columnMap.TryGetValue(key: prop.Name, value: out bool isGlobal)
-                            && isGlobal
-                        )
+                        if (columnMap.TryGetValue(prop.Name, out var isGlobal) && isGlobal)
                         {
-                            masterObj[propertyName: prop.Name] ??= prop.Value;
+                            // Global field (seperti Organization)
+                            masterObj[prop.Name] ??= prop.Value;
                         }
                         else
                         {
-                            if (!detailMap.ContainsKey(key: prop.Name))
-                                detailMap[key: prop.Name] = new JArray();
-                            detailMap[key: prop.Name].Add(item: prop.Value);
+                            // Detail field (seperti Nama, Gaji)
+                            detailItem[prop.Name] = prop.Value.DeepClone();
+                            hasDetail = true;
                         }
+                    }
+
+                    if (hasDetail && detailItem.HasValues)
+                    {
+                        detailList.Add(detailItem);
                     }
                 }
 
-                foreach (var detail in detailMap)
-                    masterObj[propertyName: detail.Key] = detail.Value;
+                // Jika ada data detail, tambahkan ke master object
+                if (detailList.Count > 0)
+                {
+                    // Cari nama yang cocok untuk group detail (misal: Karyawan)
+                    var detailGroupName = "Detail";
+                    var fromAliasParts = request.From.Split(
+                        [" AS ", " as "],
+                        StringSplitOptions.RemoveEmptyEntries
+                    );
+                    if (fromAliasParts.Length > 1)
+                    {
+                        detailGroupName = fromAliasParts[1].Trim();
+                    }
+
+                    masterObj[detailGroupName] = detailList;
+                }
 
                 return masterObj;
             }
@@ -181,10 +202,9 @@ public static class JsonQueryEngine
         if (string.IsNullOrEmpty(value: fromAlias))
             return query;
 
-        return query.Select(selector: item =>
-        {
-            return (JToken)new JObject { [propertyName: fromAlias] = item.DeepClone() };
-        });
+        return query.Select(
+            selector: JToken (item) => new JObject { [propertyName: fromAlias] = item.DeepClone() }
+        );
     }
 
     private static IEnumerable<JToken> PerformGroupingAndSelection(
@@ -192,7 +212,7 @@ public static class JsonQueryEngine
         IEnumerable<JToken> query
     )
     {
-        bool hasAggregate =
+        var hasAggregate =
             request.Select?.Any(predicate: s => s.Contains(value: '(') && s.Contains(value: ')'))
             ?? false;
 
@@ -207,7 +227,8 @@ public static class JsonQueryEngine
             return grouped;
         }
         // Jika Agregasi Global (e.g SELECT COUNT(*))
-        else if (hasAggregate)
+
+        if (hasAggregate)
         {
             var list = query.ToList();
             var resultObj = new JObject();
@@ -235,10 +256,11 @@ public static class JsonQueryEngine
                 else
                     resultObj[propertyName: alias] = JValue.CreateNull();
             }
-            return new List<JToken> { resultObj };
+            return (List<JToken>)[resultObj];
         }
         // Proyeksi SELECT biasa
-        else if (request.Select?.Length > 0)
+
+        if (request.Select?.Length > 0)
         {
             return query.Select(selector: item =>
                 ProjectItem(root: request.Data!, item: item, select: request.Select)
@@ -261,23 +283,30 @@ public static class JsonQueryEngine
         var projectedObj = new JObject();
         foreach (var selection in select)
         {
-            var parts = selection.Split(
+            var selectParts = selection.Split( // Ganti nama variabel dari parts
                 separator: [" AS ", " as "],
                 options: StringSplitOptions.RemoveEmptyEntries
             );
-            string sourceField = parts[0].Trim();
-            string aliasField =
-                parts.Length > 1
-                    ? parts[1].Trim()
-                    : (
-                        sourceField.Contains(value: '.')
-                            ? sourceField.Split(separator: '.').Last()
-                            : sourceField.Replace(oldValue: "$.", newValue: "")
-                    );
+            var sourceField = selectParts[0].Trim();
+            var aliasField =
+                selectParts.Length > 1 ? selectParts[1].Trim() : sourceField.Split('.').Last();
 
-            projectedObj[propertyName: aliasField] =
-                GetTokenValue(root: root, item: item, path: sourceField)?.DeepClone()
-                ?? JValue.CreateNull();
+            // Handle field dengan notasi dot (misal: Karyawan.FullName)
+            JToken? tokenValue;
+            if (sourceField.Contains('.'))
+            {
+                // Jika field mengandung titik, gunakan GetTokenValue
+                tokenValue = GetTokenValue(root, item, sourceField);
+            }
+            else
+            {
+                // Jika tidak, cari di root atau item
+                tokenValue =
+                    GetTokenValue(root, item, sourceField)
+                    ?? GetTokenValue(root, item, "$." + sourceField);
+            }
+
+            projectedObj[aliasField] = tokenValue?.DeepClone() ?? JValue.CreateNull();
         }
         return projectedObj;
     }
@@ -295,8 +324,8 @@ public static class JsonQueryEngine
         if (path.Contains(value: '.'))
         {
             var parts = path.Split(separator: '.');
-            string alias = parts[0];
-            string field = string.Join(separator: ".", values: parts.Skip(count: 1));
+            var alias = parts[0];
+            var field = string.Join(separator: ".", values: parts.Skip(count: 1));
 
             if (
                 item is JObject jo
@@ -328,7 +357,7 @@ public static class JsonQueryEngine
 
     private static bool EvaluateConditions(JObject root, JToken item, string[] conditions)
     {
-        if (conditions == null || conditions.Length == 0)
+        if (conditions.Length == 0)
             return true;
 
         // Gabungkan kembali menjadi string utuh untuk dianalisis ulang secara benar
@@ -344,14 +373,14 @@ public static class JsonQueryEngine
             return true;
 
         // Ambil hasil kondisi pertama
-        bool result = EvaluateSingleCondition(root: root, item: item, condition: parts[0]);
+        var result = EvaluateSingleCondition(root: root, item: item, condition: parts[0]);
 
-        for (int i = 1; i < parts.Length; i += 2)
+        for (var i = 1; i < parts.Length; i += 2)
         {
-            string op = parts[i].ToUpper();
+            var op = parts[i].ToUpper();
             if (i + 1 < parts.Length)
             {
-                bool nextRes = EvaluateSingleCondition(
+                var nextRes = EvaluateSingleCondition(
                     root: root,
                     item: item,
                     condition: parts[i + 1]
@@ -369,7 +398,7 @@ public static class JsonQueryEngine
     private static bool EvaluateSingleCondition(JObject root, JToken item, string condition)
     {
         string[] operators = ["==", "!=", ">=", "<=", ">", "<"];
-        string selectedOp = "";
+        var selectedOp = "";
         string[] parts = [];
 
         foreach (var op in operators)
@@ -385,17 +414,17 @@ public static class JsonQueryEngine
         if (parts.Length < 2)
             return false;
 
-        string leftPath = parts[0].Trim();
+        var leftPath = parts[0].Trim();
         // Membersihkan kutipan satu per satu secara eksplisit
-        string rightValueRaw = parts[1].Trim().Trim(trimChar: '\'').Trim(trimChar: '"');
+        var rightValueRaw = parts[1].Trim().Trim(trimChar: '\'').Trim(trimChar: '"');
 
-        JToken? leftToken = GetTokenValue(root: root, item: item, path: leftPath);
+        var leftToken = GetTokenValue(root: root, item: item, path: leftPath);
         if (leftToken == null)
             return false;
 
         // Jika tipe data di JSON adalah string, JToken.ToString() terkadang memberikan hasil yang berbeda
         // tergantung versi Newtonsoft. Cara paling aman:
-        string leftValue =
+        var leftValue =
             leftToken.Type == JTokenType.String ? (string)leftToken! : leftToken.ToString();
 
         return selectedOp switch
@@ -423,8 +452,8 @@ public static class JsonQueryEngine
     private static bool TryCompare(string left, string right, Func<double, double, bool> op)
     {
         if (
-            double.TryParse(s: left, result: out double l)
-            && double.TryParse(s: right, result: out double r)
+            double.TryParse(s: left, result: out var l)
+            && double.TryParse(s: right, result: out var r)
         )
             return op(arg1: l, arg2: r);
         return false;
@@ -503,8 +532,8 @@ public static class JsonQueryEngine
         if (open == -1 || close == -1)
             return JValue.CreateNull();
 
-        string func = expression[..open].ToUpper();
-        string field = expression.Substring(startIndex: open + 1, length: close - open - 1);
+        var func = expression[..open].ToUpper();
+        var field = expression.Substring(startIndex: open + 1, length: close - open - 1);
 
         // Filter v agar tidak null sebelum masuk ke kalkulasi
         var values = group
@@ -541,41 +570,6 @@ public static class JsonQueryEngine
         };
     }
 
-    private static IEnumerable<JToken> ApplyOrdering(IEnumerable<JToken> query, string[] order)
-    {
-        IOrderedEnumerable<JToken>? ordered = null;
-        foreach (var clause in order)
-        {
-            var parts = clause.Trim().Split(separator: ' ');
-            string col = parts[0];
-            bool desc =
-                parts.Length > 1
-                && parts[1]
-                    .Equals(value: "DESC", comparisonType: StringComparison.OrdinalIgnoreCase);
-
-            Func<JToken, object?> selector = item =>
-            {
-                var val = GetTokenValue(root: null!, item: item, path: col); // Cari di item lokal
-                return val?.Type switch
-                {
-                    JTokenType.Integer => val.Value<long>(),
-                    JTokenType.Float => val.Value<double>(),
-                    _ => val?.ToString(),
-                };
-            };
-
-            if (ordered == null)
-                ordered = desc
-                    ? query.OrderByDescending(keySelector: selector)
-                    : query.OrderBy(keySelector: selector);
-            else
-                ordered = desc
-                    ? ordered.ThenByDescending(keySelector: selector)
-                    : ordered.ThenBy(keySelector: selector);
-        }
-        return ordered ?? query;
-    }
-
     private static IEnumerable<JToken> ApplyJoin(
         JObject root,
         IEnumerable<JToken> mainQuery,
@@ -598,7 +592,7 @@ public static class JsonQueryEngine
                 ? tableParts[1].Trim()
                 : joinPath.Replace(oldValue: "$.", newValue: "");
 
-        JToken? rightToken = GetSourceToken(root: root, path: joinPath);
+        var rightToken = GetSourceToken(root: root, path: joinPath);
         var rightArray = rightToken is JArray ja
             ? ja
             : (rightToken != null ? new JArray(content: rightToken) : null);
@@ -624,7 +618,7 @@ public static class JsonQueryEngine
             });
             if (match == null)
                 return leftItem;
-            JObject combined = leftItem is JObject jo ? (JObject)jo.DeepClone() : [];
+            var combined = leftItem is JObject jo ? (JObject)jo.DeepClone() : [];
             combined[propertyName: rightAlias] = match.DeepClone();
             return combined;
         });
@@ -638,7 +632,7 @@ public static class JsonQueryEngine
     {
         IOrderedEnumerable<JToken>? orderedQuery = null;
 
-        for (int i = 0; i < orderClauses.Length; i++)
+        for (var i = 0; i < orderClauses.Length; i++)
         {
             var clause = orderClauses[i].Trim();
             var parts = clause.Split(
