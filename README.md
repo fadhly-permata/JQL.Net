@@ -1,7 +1,6 @@
 # 🚀 JQL.Net (JSON Query Language for .NET)
 
-[![NuGet](https://img.shields.io/nuget/v/JQL.Net.svg)](https://www.nuget.org/packages/JQL.Net/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![NuGet](https://img.shields.io/nuget/v/JQL.Net.svg)](https://www.nuget.org/packages/JQL.Net/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Bring the power of SQL to your JSON!** 🎯 
 
@@ -12,11 +11,14 @@ JQL.Net is a lightweight, high-performance query engine that lets you search, jo
 ## ✨ Features
 
 - 🔍 **SQL-Like Syntax**: Use `SELECT`, `FROM`, `WHERE`, `JOIN`, `GROUP BY`, `HAVING`, and `ORDER BY`.
-- 🤝 **Advanced Joins**: Support for multiple conditions in `ON` using `AND` / `OR` logic.
+- 🤝 **Advanced Joins** <sup>1</sup>: Support for multiple conditions in `ON` using `AND` / `OR` logic. 
 - 🧮 **Aggregations**: Built-in support for `SUM`, `COUNT`, `AVG`, `MIN`, and `MAX`.
 - ☁️ **Case-Insensitive**: Keywords like `select` or `SELECT`? We don't judge. It just works.
 - 🏷️ **Alias Support**: Use `AS` to keep your results clean and readable.
 - ⚡ **Lightweight**: Zero database dependencies. Just you and your JSON.
+
+**Notes:**
+**<sup>1</sup>** *Stay tuned for JOIN capabilities in upcoming releases!*
 
 ---
 
@@ -32,114 +34,188 @@ dotnet add package JQL.Net
 
 ## 🚀 Quick Start
 
-Using JQL.Net is as easy as ordering pizza. Check this out:
+Ready to write your very first query with **JQL.Net**? It's as easy as ordering pizza! 🍕 Here are two ways to get started:
 
+### Method 1: Object-Oriented Approach
 ```csharp
-using JQL.Net.Extensions;
+using JQL.Net;
+using JQL.Net.Core;
 using Newtonsoft.Json.Linq;
 
-// 1. Your raw JSON data
-var json = @"{
-    'employees': [
-        { 'id': 1, 'name': 'John Doe', 'dept_id': 10, 'salary': 8000 },
-        { 'id': 2, 'name': 'Jane Smith', 'dept_id': 10, 'salary': 9500 }
-    ],
-    'departments': [
-        { 'id': 10, 'name': 'IT', 'budget': 20000 }
+// Sample data
+var json = @"
+{
+    'Transactions': [
+        { 'Id': 1, 'CustomerName': 'Fadhly Permata', 'Category': 'Electronics', 'Amount': 5000000 },
+        { 'Id': 2, 'CustomerName': 'Budi Santoso', 'Category': 'Electronics', 'Amount': 1500000 },
+        { 'Id': 3, 'CustomerName': 'Sari Wijaya', 'Category': 'Clothing', 'Amount': 200000 }
     ]
 }";
 
 var data = JObject.Parse(json);
 
-// 2. Write your 'SQL'
-string query = @"
-    SELECT e.name, d.name AS DeptName
-    FROM $.employees AS e
-    JOIN $.departments AS d ON e.dept_id == d.id
-    WHERE e.salary > 5000";
+// Build query
+var request = new JsonQueryRequest { 
+    Select = new[] { "CustomerName", "Amount" },
+    From = "$.Transactions",
+    Conditions = new[] { "Amount > 1000000" },
+    Data = data
+};
 
-// 3. Execute!
-var results = data.Query(query);
+// Execute!
+var results = JsonQueryEngine.Execute(request);
 
-foreach (var row in results) {
-    Console.WriteLine($"{row["name"]} works in {row["DeptName"]}");
+// Process results
+foreach (var result in results)
+{
+    Console.WriteLine($"Customer: {result["CustomerName"]}, Amount: {result["Amount"]}");
 }
 ```
+
+### Method 2: SQL String Approach
+```csharp
+using JQL.Net;
+using JQL.Net.Extensions;
+using Newtonsoft.Json.Linq;
+
+// Sample data
+var json = @"
+{
+    'Transactions': [
+        { 'Id': 1, 'CustomerName': 'Fadhly Permata', 'Category': 'Electronics', 'Amount': 5000000 },
+        { 'Id': 2, 'CustomerName': 'Budi Santoso', 'Category': 'Electronics', 'Amount': 1500000 },
+        { 'Id': 3, 'CustomerName': 'Sari Wijaya', 'Category': 'Clothing', 'Amount': 200000 }
+    ]
+}";
+
+var data = JObject.Parse(json);
+
+var request = new JsonQueryRequest
+{
+    RawQuery = "SELECT CustomerName, Amount FROM $.Transactions WHERE Amount > 1000000",
+    Data = data
+};
+
+var results = JsonQueryEngine.Execute(request.Parse());
+
+// Process results
+foreach (var result in results)
+{
+    Console.WriteLine($"Customer: {result["CustomerName"]}, Amount: {result["Amount"]}");
+}
+```
+
+### Method 3: Extension Method Approach
+```csharp
+using JQL.Net.Extensions;
+using Newtonsoft.Json.Linq;
+
+// Sample data
+var json = @"
+{
+    'Transactions': [
+        { 'Id': 1, 'CustomerName': 'Fadhly Permata', 'Category': 'Electronics', 'Amount': 5000000 },
+        { 'Id': 2, 'CustomerName': 'Budi Santoso', 'Category': 'Electronics', 'Amount': 1500000 },
+        { 'Id': 3, 'CustomerName': 'Sari Wijaya', 'Category': 'Clothing', 'Amount': 200000 }
+    ]
+}";
+
+var data = JObject.Parse(json);
+
+// Using the extension method
+var results = data.Query("SELECT CustomerName, Amount FROM $.Transactions WHERE Amount > 1000000");
+
+// Process results
+foreach (var result in results)
+{
+    Console.WriteLine($"Customer: {result["CustomerName"]}, Amount: {result["Amount"]}");
+}
+```
+
+---
+
+📚 **Want to see more examples and implementation details?**  
+Check out our Wiki page:  
+👉 [JQL.Net Wiki](https://github.com/fadhly-permata/JQL.Net/wiki)  
+You'll find tons of examples, best practices, and complete guides to level up your JQL.Net game! 🚀
+
 
 ---
 
 ## 💡 Cool Examples
 
 ### Complex Joins (The 'AND/OR' Power) 🦾
-Need to link data with multiple rules? No problem:
 ```sql
-SELECT e.name, p.proj_name 
-FROM $.employees AS e 
-JOIN $.projects AS p ON e.proj_id == p.id AND p.status == 'Active'
+SELECT u.name, o.order_date
+FROM $.users AS u
+JOIN $.orders AS o ON u.id == o.user_id AND o.status == 'completed'
 ```
 
 ### Aggregations & Having 📊
-Want to find big-spending departments?
 ```sql
-SELECT d.name, SUM(salary) AS total_cost 
-FROM $.employees AS e 
-JOIN $.departments AS d ON dept_id == id 
-GROUP BY d.name 
-HAVING total_cost > d.budget
+SELECT city, AVG(age) AS avg_age, COUNT(*) AS user_count
+FROM $.users
+GROUP BY city
+HAVING user_count > 5
 ```
 
 ---
 
 ## 🛠️ Supported Keywords
 
-| Keyword | Description |
-| :--- | :--- |
-| `SELECT` | Choose which fields to return (supports Aliases). |
-| `FROM` | Define the JSON path (default is `$`). |
-| `JOIN` | Combine two JSON arrays with `ON` logic. |
-| `WHERE` | Filter results with `==`, `!=`, `>`, `<`, etc. |
-| `GROUP BY`| Bundle results by specific fields. |
-| `HAVING` | Filter aggregated groups. |
-| `ORDER BY`| Sort your output. |
+| Keyword | Description | Example | Status |
+| :--- | :--- | :--- | :--- |
+| `SELECT` | Choose which fields to return (supports aliases with `AS`). | `SELECT name, age AS UserAge` | ✅ Fully Supported |
+| `FROM` | Define the JSON path to query (supports aliases with `AS`). | `FROM $.users AS u` | ✅ Fully Supported |
+| `WHERE` | Filter results using comparison operators (`==`, `!=`, `>`, `<`, `>=`, `<=`). | `WHERE age > 25 AND city == 'Jakarta'` | ✅ Fully Supported |
+| `GROUP BY`| Group results by specified fields. | `GROUP BY department` | ✅ Fully Supported |
+| `HAVING` | Filter grouped results (used after `GROUP BY`). | `HAVING COUNT(*) > 5` | ✅ Fully Supported |
+| `ORDER BY`| Sort results in ascending order. | `ORDER BY name, age DESC` | ✅ Fully Supported |
+| `JOIN` | Combine JSON arrays with `ON` conditions | `JOIN $.orders AS o ON u.id == o.user_id` | ⚠️ Experimental |
+| Aggregate Functions | `SUM()`, `COUNT()`, `AVG()`, `MIN()`, `MAX()` | `SELECT AVG(age) AS AvgAge` | ✅ Fully Supported |
+
+### 🔍 Operator Support:
+- **Comparison**: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- **Logical**: `AND`, `OR` (in `WHERE` and `HAVING` clauses)
+- **Aliasing**: `AS` keyword for field and table aliases
+
+### ⚠️ Important Notes:
+- String values must be enclosed in single quotes: `'value'`
+- Field names with spaces or special characters should use bracket notation: `$.['field name']`
+- Case-insensitive keywords (e.g., `select` or `SELECT` both work)
+- Use `$.` prefix for root-relative paths
+- JOIN functionality is currently experimental and may have limitations
 
 ---
 
 ## 🗺️ Roadmap & Future Fun
 
-We’re just warming up — the journey has only begun! Here’s a sneak peek at what’s bubbling in the pot for upcoming releases 🍲✨
+We're just getting started! Here's what's cooking for upcoming releases:
 
 ### ⚡ Core Query Magic
-- [ ] **DISTINCT**: Say goodbye to duplicate rows, keep it clean!
-- [ ] **Pagination**: Add LIMIT & OFFSET so giant JSON arrays don’t scare you.
-- [ ] **Subqueries**: Queries inside queries… inception style 🎬
-- [ ] **Set Ops**: UNION & UNION ALL to mix and match results.
-- [ ] **Culture-Aware Sorting**: Smarter sorting that respects your locale.
+- [ ] **JOIN Improvements**: Enhanced JOIN capabilities with multiple conditions
+- [ ] **DISTINCT**: Say goodbye to duplicate rows!
+- [ ] **Pagination**: LIMIT & OFFSET support
+- [ ] **Subqueries**: Queries inside queries
+- [ ] **Set Operations**: UNION & UNION ALL
 
 ### 🔍 Smarter Filtering
-- [ ] **Pattern Matching**: LIKE & REGEX for ninja-level text searches 🥷
-- [ ] **Ranges & Sets**: IN and BETWEEN to keep filters simple.
-- [ ] **Conditional Logic**: CASE WHEN … THEN … ELSE for dynamic tricks.
-- [ ] **Null Safety**: IS NULL & IS MISSING so you don’t trip over empty values.
+- [ ] **Pattern Matching**: LIKE & REGEX support
+- [ ] **Ranges & Sets**: IN and BETWEEN operators
+- [ ] **Conditional Logic**: CASE WHEN expressions
+- [ ] **Null Safety**: IS NULL & IS NOT NULL
 
 ### 🛠️ Functions Galore
-- [ ] **String Toolkit**: CONCAT, UPPER, LOWER, SUBSTRING — the usual suspects.
-- [ ] **Date & Time**: YEAR(), MONTH(), DAY() — because time matters ⏰
-- [ ] **Type Casting**: CAST() to keep your data in line.
-- [ ] **Coalesce**: Grab the first non-null value like a pro.
-- [ ] **Custom Functions API**: Plug in your own C# magic directly into queries.
+- [ ] **String Functions**: CONCAT, UPPER, LOWER
+- [ ] **Date & Time Functions**: YEAR(), MONTH(), DAY()
+- [ ] **Type Casting**: CAST() function
+- [ ] **Custom Functions**: Extend with your own C# logic
 
 ### 🚀 Performance & Integrations
-- [ ] **Query Caching**: Faster runs with smart caching.
-- [ ] **Prepared Statements**: Cleaner queries with parameters (@id, etc).
-- [ ] **Async Execution**: ExecuteAsync for smooth non-blocking vibes.
-- [ ] **Schema Discovery**: DESCRIBE your JSON structure like a boss.
-- [ ] **Multi-Format Export**: CSV, XML, DataTable — pick your flavor 🍦
-- [ ] **Query Profiler**: Spot bottlenecks before they slow you down.
-
----
-
-💡 *This roadmap is a living list — features may shuffle, evolve, or surprise you along the way. Stay tuned, and let’s keep pushing JSON querying to the next level!* 🚀
-
+- [ ] **Query Caching**: Faster repeated queries
+- [ ] **Prepared Statements**: Parameterized queries
+- [ ] **Async Execution**: ExecuteAsync support
+- [ ] **Multi-Format Export**: CSV, XML, DataTable
 
 ---
 
@@ -147,9 +223,9 @@ We’re just warming up — the journey has only begun! Here’s a sneak peek at
 
 Got a cool idea or found a bug? 🐛
 1. Fork it!
-2. Create your feature branch (`git checkout -b feature/cool-stuff`)
-3. Commit your changes (`git commit -m 'Add some cool stuff'`)
-4. Push to the branch (`git push origin feature/cool-stuff`)
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request.
 
 ---

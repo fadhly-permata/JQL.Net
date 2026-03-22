@@ -7,3 +7,11 @@ using System.Diagnostics.CodeAnalysis;
     Scope = "member",
     Target = "~M:JQL.Net.JsonQueryRequest.Parse(System.String)"
 )]
+
+[assembly: SuppressMessage(
+    category: "SonarLint",
+    checkId: "S4055",
+    Justification = "Static method required for IComparer implementation",
+    Scope = "member",
+    Target = "~M:JQL.Net.Core.Utilities.JTokenComparer.Compare(Newtonsoft.Json.Linq.JToken,Newtonsoft.Json.Linq.JToken)"
+)]
