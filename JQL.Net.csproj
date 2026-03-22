@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <PackageId>JQL.Net</PackageId>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <Authors>Fadhly Permata</Authors>
     <Company>Fadhly Permata</Company>
     <Description>JQL.Net: A lightweight SQL-inspired engine to query, join, and aggregate JSON in .NET. No database? No problem!</Description>
