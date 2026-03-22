@@ -133,17 +133,17 @@ public class JsonQueryRequest
         );
 
         // Perbaikan: WHERE split lebih sensitif terhadap spasi
+        // Di dalam JsonQueryRequest.cs -> Method Parse
+        // Ganti baris ini di JsonQueryRequest.cs (sekitar baris 150)
         Conditions = GetSection(
             query: RawQuery,
             startKey: "WHERE",
             endKeys: ["GROUP BY", "ORDER BY"]
         )
             ?.Split(
-                separator: [" AND ", " OR ", " and ", " or "],
+                separator: [' '], // Split per spasi agar AND/OR tidak hilang
                 options: StringSplitOptions.RemoveEmptyEntries
-            )
-            .Select(selector: static s => s.Trim())
-            .ToArray();
+            );
 
         GroupBy = GetSection(query: RawQuery, startKey: "GROUP BY", endKeys: ["HAVING", "ORDER BY"])
             ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
