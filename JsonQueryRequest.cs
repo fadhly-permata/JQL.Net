@@ -69,10 +69,9 @@ public class JsonQueryRequest
     /// </exception>
     public JsonQueryRequest Parse()
     {
-        if (string.IsNullOrWhiteSpace(RawQuery))
-            throw new ArgumentException("Query string cannot be null or empty.");
-
-        return Parse(RawQuery);
+        return string.IsNullOrWhiteSpace(value: RawQuery)
+            ? throw new ArgumentException(message: "Query string cannot be null or empty.")
+            : Parse(rawQuery: RawQuery);
     }
 
     /// <summary>
@@ -89,49 +88,79 @@ public class JsonQueryRequest
     /// </exception>
     public JsonQueryRequest Parse(string rawQuery)
     {
-        if (string.IsNullOrWhiteSpace(rawQuery))
-            throw new ArgumentException("Query string cannot be null or empty.");
+        if (string.IsNullOrWhiteSpace(value: rawQuery))
+            throw new ArgumentException(message: "Query string cannot be null or empty.");
 
-        RawQuery = rawQuery.Replace(Environment.NewLine, " ").Trim();
+        RawQuery = rawQuery.Replace(oldValue: Environment.NewLine, newValue: " ").Trim();
 
-        if (RawQuery.Contains("SELECT DISTINCT", StringComparison.OrdinalIgnoreCase))
+        if (
+            RawQuery.Contains(
+                value: "SELECT DISTINCT",
+                comparisonType: StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             Distinct = true;
-            RawQuery = RawQuery.Replace("DISTINCT", "", StringComparison.OrdinalIgnoreCase).Trim();
+            RawQuery = RawQuery
+                .Replace(
+                    oldValue: "DISTINCT",
+                    newValue: "",
+                    comparisonType: StringComparison.OrdinalIgnoreCase
+                )
+                .Trim();
         }
 
-        Select = GetSection(RawQuery, "SELECT", ["FROM"])
-            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static s => s.Trim())
+        Select = GetSection(query: RawQuery, startKey: "SELECT", endKeys: ["FROM"])
+            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
+            .Select(selector: static s => s.Trim())
             .ToArray();
 
         From =
-            GetSection(RawQuery, "FROM", ["JOIN", "WHERE", "GROUP BY", "ORDER BY"])?.Trim() ?? "$";
+            GetSection(
+                query: RawQuery,
+                startKey: "FROM",
+                endKeys: ["JOIN", "WHERE", "GROUP BY", "ORDER BY"]
+            )
+                ?.Trim() ?? "$";
 
-        if (string.IsNullOrWhiteSpace(From))
-            throw new JsonQueryException("FROM clause cannot be empty");
+        if (string.IsNullOrWhiteSpace(value: From))
+            throw new JsonQueryException(message: "FROM clause cannot be empty");
 
-        Join = GetSections(RawQuery, "JOIN", ["WHERE", "GROUP BY", "ORDER BY"]);
+        Join = GetSections(
+            query: RawQuery,
+            key: "JOIN",
+            endKeys: ["WHERE", "GROUP BY", "ORDER BY"]
+        );
 
         // Perbaikan: WHERE split lebih sensitif terhadap spasi
-        Conditions = GetSection(RawQuery, "WHERE", ["GROUP BY", "ORDER BY"])
-            ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
-            .Select(static s => s.Trim())
+        Conditions = GetSection(
+            query: RawQuery,
+            startKey: "WHERE",
+            endKeys: ["GROUP BY", "ORDER BY"]
+        )
+            ?.Split(
+                separator: [" AND ", " OR ", " and ", " or "],
+                options: StringSplitOptions.RemoveEmptyEntries
+            )
+            .Select(selector: static s => s.Trim())
             .ToArray();
 
-        GroupBy = GetSection(RawQuery, "GROUP BY", ["HAVING", "ORDER BY"])
-            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static s => s.Trim())
+        GroupBy = GetSection(query: RawQuery, startKey: "GROUP BY", endKeys: ["HAVING", "ORDER BY"])
+            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
+            .Select(selector: static s => s.Trim())
             .ToArray();
 
-        Having = GetSection(RawQuery, "HAVING", ["ORDER BY"])
-            ?.Split([" AND ", " OR ", " and ", " or "], StringSplitOptions.RemoveEmptyEntries)
-            .Select(static s => s.Trim())
+        Having = GetSection(query: RawQuery, startKey: "HAVING", endKeys: ["ORDER BY"])
+            ?.Split(
+                separator: [" AND ", " OR ", " and ", " or "],
+                options: StringSplitOptions.RemoveEmptyEntries
+            )
+            .Select(selector: static s => s.Trim())
             .ToArray();
 
-        Order = GetSection(RawQuery, "ORDER BY", null)
-            ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static s => s.Trim())
+        Order = GetSection(query: RawQuery, startKey: "ORDER BY", endKeys: null)
+            ?.Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries)
+            .Select(selector: static s => s.Trim())
             .ToArray();
 
         return this;
@@ -139,25 +168,28 @@ public class JsonQueryRequest
 
     private static string? GetSection(string query, string startKey, string[]? endKeys)
     {
-        var startIndex = query.IndexOf(startKey, StringComparison.OrdinalIgnoreCase);
+        var startIndex = query.IndexOf(
+            value: startKey,
+            comparisonType: StringComparison.OrdinalIgnoreCase
+        );
         if (startIndex == -1)
             return null;
 
         startIndex += startKey.Length;
         var endIndex = query.Length;
 
-        if (endKeys != null)
+        if (endKeys == null)
+            return query[startIndex..endIndex].Trim();
+
+        foreach (var key in endKeys)
         {
-            foreach (var key in endKeys)
-            {
-                int index = query.IndexOf(
-                    $" {key} ",
-                    startIndex,
-                    StringComparison.OrdinalIgnoreCase
-                );
-                if (index != -1 && index < endIndex)
-                    endIndex = index;
-            }
+            var index = query.IndexOf(
+                value: $" {key} ",
+                startIndex: startIndex,
+                comparisonType: StringComparison.OrdinalIgnoreCase
+            );
+            if (index != -1 && index < endIndex)
+                endIndex = index;
         }
 
         return query[startIndex..endIndex].Trim();
@@ -168,26 +200,31 @@ public class JsonQueryRequest
         var results = new List<string>();
         var currentIndex = 0;
         while (
-            (currentIndex = query.IndexOf(key, currentIndex, StringComparison.OrdinalIgnoreCase))
-            != -1
+            (
+                currentIndex = query.IndexOf(
+                    value: key,
+                    startIndex: currentIndex,
+                    comparisonType: StringComparison.OrdinalIgnoreCase
+                )
+            ) != -1
         )
         {
-            int startIndex = currentIndex + key.Length;
-            int endIndex = query.Length;
+            var startIndex = currentIndex + key.Length;
+            var endIndex = query.Length;
             if (endKeys != null)
             {
                 foreach (var eKey in endKeys)
                 {
-                    int index = query.IndexOf(
-                        $" {eKey} ",
-                        startIndex,
-                        StringComparison.OrdinalIgnoreCase
+                    var index = query.IndexOf(
+                        value: $" {eKey} ",
+                        startIndex: startIndex,
+                        comparisonType: StringComparison.OrdinalIgnoreCase
                     );
                     if (index != -1 && index < endIndex)
                         endIndex = index;
                 }
             }
-            results.Add(query[startIndex..endIndex].Trim());
+            results.Add(item: query[startIndex..endIndex].Trim());
             currentIndex = startIndex;
         }
         return results.Count > 0 ? [.. results] : null;
