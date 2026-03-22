@@ -148,9 +148,7 @@ public static class JsonQueryEngine
                 && targetToken is not JArray
                 && string.IsNullOrEmpty(value: fromAlias)
             )
-            {
                 return queryResult.First();
-            }
 
             return JArray.FromObject(o: queryResult);
         }
