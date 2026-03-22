@@ -36,6 +36,11 @@ dotnet add package JQL.Net
 
 Ready to write your very first query with **JQL.Net**? It's as easy as ordering pizza! 🍕 Here are two ways to get started:
 
+### 🎮 Play with JQL.Net Online
+Try JQL.Net directly in your browser without any setup!  
+👉 [JQL.Net Playground on DotNetFiddle](https://dotnetfiddle.net/I8OrwR)
+
+
 ### Method 1: Object-Oriented Approach
 ```csharp
 using JQL.Net;
