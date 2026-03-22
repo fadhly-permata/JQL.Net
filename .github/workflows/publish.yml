@@ -1,0 +1,46 @@
+name: Publish JQL.Net to NuGet and GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions: # Diperlukan untuk membuat GitHub Release
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Mengambil seluruh histori untuk generate changelog
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Test
+      run: dotnet test --configuration Release --no-build --verbosity normal
+
+    - name: Pack
+      # Membuat paket NuGet (.nupkg)
+      run: dotnet pack --configuration Release --no-build -o dist
+
+    - name: Push to NuGet
+      run: dotnet nuget push dist/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/*.nupkg # Melampirkan file paket ke halaman release GitHub
+        generate_release_notes: true # Otomatis membuat daftar commit sebagai changelog
+        draft: false
+        prerelease: false
