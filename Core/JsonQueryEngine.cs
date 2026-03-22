@@ -1,3 +1,4 @@
+using JQL.Net.Core.Utilities;
 using JQL.Net.Exceptions;
 using Newtonsoft.Json.Linq;
 
@@ -690,60 +691,4 @@ public static class JsonQueryEngine
             )
         );
     }
-}
-
-internal class JTokenComparer : IComparer<JToken?>
-{
-    public int Compare(JToken? x, JToken? y)
-    {
-        if (ReferenceEquals(objA: x, objB: y))
-            return 0;
-        if (x == null)
-            return -1;
-        if (y == null)
-            return 1;
-
-        if (x is JValue vx && y is JValue vy)
-        {
-            var valX = vx.Value;
-            var valY = vy.Value;
-
-            if (valX == null && valY == null)
-                return 0;
-            if (valX == null)
-                return -1;
-            if (valY == null)
-                return 1;
-
-            if (IsNumeric(obj: valX) && IsNumeric(obj: valY))
-                return Convert
-                    .ToDouble(value: valX)
-                    .CompareTo(value: Convert.ToDouble(value: valY));
-
-            return string.Compare(
-                strA: valX.ToString(),
-                strB: valY.ToString(),
-                comparisonType: StringComparison.OrdinalIgnoreCase
-            );
-        }
-        return string.Compare(
-            strA: x.ToString(),
-            strB: y.ToString(),
-            comparisonType: StringComparison.OrdinalIgnoreCase
-        );
-    }
-
-    private static bool IsNumeric(object obj) =>
-        obj
-            is sbyte
-                or byte
-                or short
-                or ushort
-                or int
-                or uint
-                or long
-                or ulong
-                or float
-                or double
-                or decimal;
 }

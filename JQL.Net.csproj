@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <PackageId>JQL.Net</PackageId>
-    <Version>1.0.6</Version>
+    <Version>1.0.10</Version>
     <Authors>Fadhly Permata</Authors>
     <Company>Fadhly Permata</Company>
     <Description>JQL.Net: A lightweight SQL-inspired engine to query, join, and aggregate JSON in .NET. No database? No problem!</Description>
@@ -13,20 +13,18 @@
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);S1192</NoWarn>
   </PropertyGroup>
-
-  <PropertyGroup>
+  <!-- <PropertyGroup>
     <PackageId>JQL.Net</PackageId>
-    <Version>1.0.0</Version> <Authors>Fadhly Permata</Authors>
+    <Version>1.0.0</Version>
+    <Authors>Fadhly Permata</Authors>
     <Description>Lightweight SQL-inspired engine to query JSON in .NET</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/fadhly-permata/JQL.Net</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-  </PropertyGroup>
-  
+  </PropertyGroup> -->
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
-  
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="LICENSE" Pack="true" PackagePath="\" />
