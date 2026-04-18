@@ -272,6 +272,8 @@ public static class JsonQueryEngine
 
     private static JToken ProjectItem(JObject root, JToken item, string[] select)
     {
+        // Console.WriteLine("DEBUG - ProjectItem - Input item: " + item.ToString()); // Debug log
+
         // Handle SELECT * atau SELECT $.*
         if (select.Length == 1 && (select[0] == "*" || select[0] == "$.*"))
         {
@@ -283,80 +285,117 @@ public static class JsonQueryEngine
         var projectedObj = new JObject();
         foreach (var selection in select)
         {
-            var selectParts = selection.Split( // Ganti nama variabel dari parts
+            var parts = selection.Split(
                 separator: [" AS ", " as "],
                 options: StringSplitOptions.RemoveEmptyEntries
             );
-            var sourceField = selectParts[0].Trim();
-            var aliasField =
-                selectParts.Length > 1 ? selectParts[1].Trim() : sourceField.Split('.').Last();
+            string sourceField = parts[0].Trim();
+            string aliasField =
+                parts.Length > 1
+                    ? parts[1].Trim()
+                    : (
+                        sourceField.Contains('.')
+                            ? sourceField.Split('.').Last()
+                            : sourceField.Replace("$.", "")
+                    );
 
-            // Handle field dengan notasi dot (misal: Karyawan.FullName)
-            JToken? tokenValue;
-            if (sourceField.Contains('.'))
+            JToken? value = null;
+
+            // Handle global fields ($.Organization)
+            if (sourceField.StartsWith("$."))
             {
-                // Jika field mengandung titik, gunakan GetTokenValue
-                tokenValue = GetTokenValue(root, item, sourceField);
+                value = root.SelectToken(sourceField);
             }
             else
             {
-                // Jika tidak, cari di root atau item
-                tokenValue =
-                    GetTokenValue(root, item, sourceField)
-                    ?? GetTokenValue(root, item, "$." + sourceField);
+                // Coba ambil nilai dari item
+                value = GetTokenValue(root, item, sourceField);
+
+                // Jika tidak ditemukan, coba cari di root
+                if (value == null)
+                {
+                    value = GetTokenValue(root, item, sourceField.Replace("d.", ""));
+                }
             }
 
-            projectedObj[aliasField] = tokenValue?.DeepClone() ?? JValue.CreateNull();
+            projectedObj[aliasField] = value?.DeepClone() ?? JValue.CreateNull();
         }
         return projectedObj;
     }
 
     private static JToken? GetTokenValue(JObject root, JToken item, string path)
     {
-        if (string.IsNullOrEmpty(value: path) || path == "$" || path == "*")
+        if (string.IsNullOrEmpty(path) || path == "$" || path == "*")
             return path == "$" ? root : item;
 
-        // 1. Handle Global Path
-        if (path.StartsWith(value: "$."))
-            return root.SelectToken(path: path);
-
-        // 2. Handle Aliasing (Contoh: "m.FullName")
-        if (path.Contains(value: '.'))
+        // Handle Global Path
+        if (path.StartsWith("$."))
         {
-            var parts = path.Split(separator: '.');
-            var alias = parts[0];
-            var field = string.Join(separator: ".", values: parts.Skip(count: 1));
+            return root.SelectToken(path);
+        }
 
-            if (
-                item is JObject jo
-                && jo.TryGetValue(
-                    propertyName: alias,
-                    comparison: StringComparison.OrdinalIgnoreCase,
-                    value: out var aliasToken
-                )
-            )
+        // Handle nested path (e.g., "m.FullName", "d.Name")
+        if (path.Contains('.'))
+        {
+            var parts = path.Split('.');
+            var current = item;
+
+            foreach (var part in parts)
             {
-                if (field == "*" || string.IsNullOrEmpty(value: field))
-                    return aliasToken;
+                if (current == null)
+                    return null;
 
-                // Gunakan SelectTokens().FirstOrDefault() untuk menghindari exception multiple tokens
-                return aliasToken.SelectTokens(path: field).FirstOrDefault();
+                if (current is JObject currentObj)
+                {
+                    // Coba ambil properti secara langsung
+                    if (currentObj.TryGetValue(part, out var next))
+                    {
+                        current = next;
+                    }
+                    else
+                    {
+                        // Coba cari case-insensitive
+                        var prop = currentObj
+                            .Properties()
+                            .FirstOrDefault(p =>
+                                string.Equals(p.Name, part, StringComparison.OrdinalIgnoreCase)
+                            );
+                        current = prop?.Value;
+                    }
+                }
+                else
+                {
+                    return null;
+                }
             }
+
+            return current;
         }
 
-        // 3. Direct Access / Fallback
-        try
+        // Handle direct property access
+        if (item is JObject itemObj)
         {
-            return item.SelectTokens(path: path).FirstOrDefault() ?? item[key: path];
+            // Coba ambil properti secara langsung
+            if (itemObj.TryGetValue(path, out var value))
+            {
+                return value;
+            }
+
+            // Coba cari case-insensitive
+            var prop = itemObj
+                .Properties()
+                .FirstOrDefault(p =>
+                    string.Equals(p.Name, path, StringComparison.OrdinalIgnoreCase)
+                );
+            return prop?.Value;
         }
-        catch
-        {
-            return item[key: path];
-        }
+
+        return null;
     }
 
     private static bool EvaluateConditions(JObject root, JToken item, string[] conditions)
     {
+        // Console.WriteLine("DEBUG - Evaluating conditions...");
         if (conditions.Length == 0)
             return true;
 
@@ -397,16 +436,19 @@ public static class JsonQueryEngine
 
     private static bool EvaluateSingleCondition(JObject root, JToken item, string condition)
     {
+        // Console.WriteLine("DEBUG - Evaluating single condition: " + condition); // Debug log
+
         string[] operators = ["==", "!=", ">=", "<=", ">", "<"];
-        var selectedOp = "";
+        string selectedOp = "";
         string[] parts = [];
 
+        // Cari operator yang digunakan
         foreach (var op in operators)
         {
-            if (condition.Contains(value: op))
+            if (condition.Contains(op))
             {
                 selectedOp = op;
-                parts = condition.Split(separator: new[] { op }, options: StringSplitOptions.None);
+                parts = condition.Split(new[] { op }, 2, StringSplitOptions.None);
                 break;
             }
         }
@@ -414,37 +456,56 @@ public static class JsonQueryEngine
         if (parts.Length < 2)
             return false;
 
-        var leftPath = parts[0].Trim();
-        // Membersihkan kutipan satu per satu secara eksplisit
-        var rightValueRaw = parts[1].Trim().Trim(trimChar: '\'').Trim(trimChar: '"');
+        string leftPath = parts[0].Trim();
+        string rightValueRaw = parts[1].Trim().Trim('\'', '"');
 
-        var leftToken = GetTokenValue(root: root, item: item, path: leftPath);
+        Console.WriteLine($"DEBUG - Left path: {leftPath}, Right value: {rightValueRaw}"); // Debug log
+
+        // Dapatkan nilai kiri
+        JToken? leftToken = GetTokenValue(root, item, leftPath);
         if (leftToken == null)
+        {
+            // Console.WriteLine("DEBUG - Left token is null"); // Debug log
             return false;
+        }
 
-        // Jika tipe data di JSON adalah string, JToken.ToString() terkadang memberikan hasil yang berbeda
-        // tergantung versi Newtonsoft. Cara paling aman:
-        var leftValue =
-            leftToken.Type == JTokenType.String ? (string)leftToken! : leftToken.ToString();
+        // Dapatkan nilai kanan (bisa dari path atau literal)
+        JToken? rightToken = GetTokenValue(root, item, rightValueRaw);
+        object? rightValue;
+
+        if (rightToken != null)
+        {
+            // Jika berhasil dapatkan dari path, gunakan nilainya
+            rightValue = rightToken is JValue rv ? rv.Value : rightToken.ToString();
+        }
+        else
+        {
+            // Jika tidak, anggap sebagai literal
+            rightValue = rightValueRaw;
+        }
+
+        object? leftValue = leftToken is JValue lv ? lv.Value : leftToken.ToString();
+
+        // Console.WriteLine(
+        //     $"DEBUG - Left value: {leftValue} ({leftValue?.GetType().Name}), "
+        //         + $"Right value: {rightValue} ({rightValue?.GetType().Name})"
+        // ); // Debug log
+
+        // Gunakan JTokenComparer untuk perbandingan
+        var comparer = new JTokenComparer();
+        JToken leftJToken = leftToken is JValue ? leftToken : JToken.FromObject(leftValue ?? "");
+        JToken rightJToken = rightToken ?? JToken.FromObject(rightValue ?? "");
+
+        int comparison = comparer.Compare(leftJToken, rightJToken);
 
         return selectedOp switch
         {
-            "==" => leftValue.Equals(
-                value: rightValueRaw,
-                comparisonType: StringComparison.OrdinalIgnoreCase
-            ),
-            "!=" => !leftValue.Equals(
-                value: rightValueRaw,
-                comparisonType: StringComparison.OrdinalIgnoreCase
-            ),
-            ">" => IsNumeric(token: leftToken)
-                && TryCompare(left: leftValue, right: rightValueRaw, op: (l, r) => l > r),
-            "<" => IsNumeric(token: leftToken)
-                && TryCompare(left: leftValue, right: rightValueRaw, op: (l, r) => l < r),
-            ">=" => IsNumeric(token: leftToken)
-                && TryCompare(left: leftValue, right: rightValueRaw, op: (l, r) => l >= r),
-            "<=" => IsNumeric(token: leftToken)
-                && TryCompare(left: leftValue, right: rightValueRaw, op: (l, r) => l <= r),
+            "==" => comparison == 0,
+            "!=" => comparison != 0,
+            ">" => comparison > 0,
+            "<" => comparison < 0,
+            ">=" => comparison >= 0,
+            "<=" => comparison <= 0,
             _ => false,
         };
     }
@@ -576,6 +637,8 @@ public static class JsonQueryEngine
         string joinStatement
     )
     {
+        // Console.WriteLine($"DEBUG - ApplyJoin: {joinStatement}"); // Debug log
+
         var onParts = joinStatement.Split(
             separator: [" ON ", " on "],
             options: StringSplitOptions.RemoveEmptyEntries
@@ -583,45 +646,147 @@ public static class JsonQueryEngine
         if (onParts.Length < 2)
             return mainQuery;
 
+        // Parse join table and alias
         var tableParts = onParts[0]
             .Trim()
             .Split(separator: [" AS ", " as "], options: StringSplitOptions.RemoveEmptyEntries);
         var joinPath = tableParts[0].Trim();
-        var rightAlias =
-            tableParts.Length > 1
-                ? tableParts[1].Trim()
-                : joinPath.Replace(oldValue: "$.", newValue: "");
+        var rightAlias = tableParts.Length > 1 ? tableParts[1].Trim() : joinPath.Replace("$.", "");
 
-        var rightToken = GetSourceToken(root: root, path: joinPath);
-        var rightArray = rightToken is JArray ja
-            ? ja
-            : (rightToken != null ? new JArray(content: rightToken) : null);
-        if (rightArray == null)
-            return mainQuery;
+        // Console.WriteLine($"DEBUG - Join Path: {joinPath}, Alias: {rightAlias}"); // Debug log
 
-        return mainQuery.Select(selector: leftItem =>
+        // Get join data
+        JToken? rightToken = GetSourceToken(root: root, path: joinPath);
+        if (rightToken == null)
         {
-            var match = rightArray.FirstOrDefault(predicate: rightItem =>
+            // Console.WriteLine("DEBUG - Right token is null"); // Debug log
+            return mainQuery;
+        }
+
+        var rightArray = rightToken is JArray ja ? ja : new JArray(rightToken);
+        // Console.WriteLine($"DEBUG - Right array count: {rightArray.Count}"); // Debug log
+
+        return mainQuery.SelectMany(leftItem =>
+        {
+            // Console.WriteLine("DEBUG - Processing left item: " + leftItem.ToString()); // Debug log
+
+            // Convert left item to JObject if it isn't already
+            var leftObj = leftItem as JObject ?? new JObject();
+
+            var matches = rightArray
+                .Where(rightItem =>
+                {
+                    bool conditionResult = EvaluateJoinCondition(
+                        root,
+                        leftObj,
+                        rightItem,
+                        rightAlias,
+                        onParts[1]
+                    );
+                    // Console.WriteLine(
+                    //     $"DEBUG - Join condition result: {conditionResult} for right item: {rightItem}"
+                    // ); // Debug log
+                    return conditionResult;
+                })
+                .ToList();
+
+            // Console.WriteLine($"DEBUG - Found {matches.Count} matches"); // Debug log
+
+            return matches.Select(rightItem =>
             {
-                JObject context = new() { [propertyName: rightAlias] = rightItem.DeepClone() };
-                if (leftItem is JObject jo)
-                    context.Merge(content: jo);
-                return EvaluateConditions(
-                    root: root,
-                    item: context,
-                    conditions: onParts[1]
-                        .Split(
-                            separator: [" AND ", " OR "],
-                            options: StringSplitOptions.RemoveEmptyEntries
-                        )
-                );
+                var result = new JObject();
+
+                // Copy all properties from left item
+                foreach (var prop in leftObj.Properties())
+                {
+                    result[prop.Name] = prop.Value.DeepClone();
+                }
+
+                // Handle right item
+                if (rightItem is JObject rightObj)
+                {
+                    foreach (var prop in rightObj.Properties())
+                    {
+                        result[prop.Name] = prop.Value.DeepClone();
+                    }
+                }
+                else
+                {
+                    result[rightAlias] = rightItem.DeepClone();
+                }
+
+                // Console.WriteLine("DEBUG - Combined result: " + result.ToString()); // Debug log
+                return (JToken)result;
             });
-            if (match == null)
-                return leftItem;
-            var combined = leftItem is JObject jo ? (JObject)jo.DeepClone() : [];
-            combined[propertyName: rightAlias] = match.DeepClone();
-            return combined;
         });
+    }
+
+    private static bool EvaluateJoinCondition(
+        JObject root,
+        JObject leftObj,
+        JToken rightItem,
+        string rightAlias,
+        string conditionString
+    )
+    {
+        try
+        {
+            // Create evaluation context
+            var context = new JObject();
+
+            // Add left properties
+            foreach (var prop in leftObj.Properties())
+            {
+                context[prop.Name] = prop.Value.DeepClone();
+            }
+
+            // Add right item with alias
+            context[rightAlias] = rightItem.DeepClone();
+
+            // Console.WriteLine("DEBUG - Join evaluation context: " + context.ToString()); // Debug log
+            // Console.WriteLine("DEBUG - Condition: " + conditionString); // Debug log
+
+            // Split condition by logical operators
+            var conditions = conditionString.Split(
+                new[] { " AND ", " OR " },
+                StringSplitOptions.RemoveEmptyEntries
+            );
+
+            bool result = EvaluateConditions(root, context, conditions);
+            // Console.WriteLine("DEBUG - Condition evaluation result: " + result); // Debug log
+            return result;
+        }
+        catch (Exception ex)
+        {
+            // Console.WriteLine("DEBUG - Error in EvaluateJoinCondition: " + ex.Message); // Debug log
+            return false;
+        }
+    }
+
+    private static bool CompareValues(object? left, object? right, string op)
+    {
+        var comparer = new JTokenComparer();
+
+        // Konversi ke JToken untuk perbandingan
+        JToken leftToken = left is JToken leftJToken
+            ? leftJToken
+            : JToken.FromObject(left ?? JValue.CreateNull());
+        JToken rightToken = right is JToken rightJToken
+            ? rightJToken
+            : JToken.FromObject(right ?? JValue.CreateNull());
+
+        int comparison = comparer.Compare(leftToken, rightToken);
+
+        return op switch
+        {
+            "==" => comparison == 0,
+            "!=" => comparison != 0,
+            ">" => comparison > 0,
+            "<" => comparison < 0,
+            ">=" => comparison >= 0,
+            "<=" => comparison <= 0,
+            _ => false,
+        };
     }
 
     private static IEnumerable<JToken> ApplySorting(
@@ -631,8 +796,9 @@ public static class JsonQueryEngine
     )
     {
         IOrderedEnumerable<JToken>? orderedQuery = null;
+        var comparer = new JTokenComparer();
 
-        for (var i = 0; i < orderClauses.Length; i++)
+        for (int i = 0; i < orderClauses.Length; i++)
         {
             var clause = orderClauses[i].Trim();
             var parts = clause.Split(
@@ -641,33 +807,22 @@ public static class JsonQueryEngine
             );
             var path = parts[0];
             var descending =
-                parts.Length > 1
-                && parts[1]
-                    .Equals(value: "DESC", comparisonType: StringComparison.OrdinalIgnoreCase);
+                parts.Length > 1 && parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
 
             if (i == 0)
             {
                 orderedQuery = descending
-                    ? query.OrderByDescending(
-                        keySelector: item => GetTokenValue(root: root, item: item, path: path),
-                        comparer: new JTokenComparer()
-                    )
-                    : query.OrderBy(
-                        keySelector: item => GetTokenValue(root: root, item: item, path: path),
-                        comparer: new JTokenComparer()
-                    );
+                    ? query.OrderByDescending(item => GetTokenValue(root, item, path), comparer)
+                    : query.OrderBy(item => GetTokenValue(root, item, path), comparer);
             }
             else
             {
                 orderedQuery = descending
                     ? orderedQuery!.ThenByDescending(
-                        keySelector: item => GetTokenValue(root: root, item: item, path: path),
-                        comparer: new JTokenComparer()
+                        item => GetTokenValue(root, item, path),
+                        comparer
                     )
-                    : orderedQuery!.ThenBy(
-                        keySelector: item => GetTokenValue(root: root, item: item, path: path),
-                        comparer: new JTokenComparer()
-                    );
+                    : orderedQuery!.ThenBy(item => GetTokenValue(root, item, path), comparer);
             }
         }
 
